@@ -39,7 +39,12 @@ jobs:
           # /ShelfLife rather than the domain root. See next.config.ts.
           GITHUB_PAGES: "true"
 
+      # `enablement` turns Pages on via the API on the first run, so the repo
+      # does not need the settings toggle flipped by hand first. Without it the
+      # very first deploy fails with "Get Pages site failed ... Not Found".
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
