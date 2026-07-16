@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Clock, Snowflake } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, Clock, Snowflake } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { BY_ID, describeQty } from "@/lib/ingredients";
 import {
@@ -9,9 +9,10 @@ import {
   currentWeekIndex,
   money,
   needsFreezing,
+  nutrition,
   servingCost,
 } from "@/lib/planner";
-import type { PlannedMeal, WeekPlan } from "@/lib/types";
+import type { Meal, PlannedMeal, WeekPlan } from "@/lib/types";
 import { Card, SectionHeading, SlotTag } from "./ui";
 
 const NEVER_CHANGES = () => () => {};
@@ -77,8 +78,118 @@ function DayColumn({
   );
 }
 
-function DishCard({ planned, index }: { planned: PlannedMeal; index: number }) {
+/** Alternatives for one slot: everything that passes the filters, minus the
+ *  dishes already on this week's menu, so a swap cannot create a duplicate. */
+function SwapPicker({
+  planned,
+  options,
+  onPick,
+  onReset,
+  onClose,
+}: {
+  planned: PlannedMeal;
+  options: Meal[];
+  onPick: (id: string) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  const here = nutrition(planned.meal);
+  const hereCost = servingCost(planned.meal);
+
+  return (
+    <div className="border-t border-line bg-sand/40 px-4 py-4">
+      <div className="flex items-baseline justify-between">
+        <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">
+          Swap for
+        </h4>
+        <div className="flex gap-3">
+          {planned.swapped ? (
+            <button
+              onClick={onReset}
+              className="cursor-pointer text-[11px] font-medium text-terracotta hover:underline"
+            >
+              Back to the rotation&apos;s pick
+            </button>
+          ) : null}
+          <button
+            onClick={onClose}
+            className="cursor-pointer text-[11px] font-medium text-muted hover:text-ink"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      {options.length === 0 ? (
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">
+          Nothing else qualifies. Every other {planned.meal.slot} is either already on
+          this week&apos;s menu or filtered out — loosen a filter to get more choice.
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {options.map((alt) => {
+            const m = nutrition(alt);
+            const cost = servingCost(alt);
+            const dK = m.kcal - here.kcal;
+            const dP = m.protein - here.protein;
+            const dC = cost - hereCost;
+            const delta = (n: number, unit: string, good: boolean) => (
+              <span className={good ? "text-olive" : "text-muted"}>
+                {n > 0 ? "+" : ""}
+                {unit === "$" ? money(n) : `${n} ${unit}`}
+              </span>
+            );
+            return (
+              <li key={alt.id}>
+                <button
+                  onClick={() => onPick(alt.id)}
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left transition-colors duration-200 hover:border-terracotta/40 hover:bg-surface"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-medium text-ink">{alt.name}</span>
+                    <span className="block text-[11px] text-muted">
+                      keeps {alt.keepsDays} days · {alt.assembleMinutes} min on the day
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-[11px] tabular-nums">
+                    <span className="block text-ink">
+                      {m.kcal} kcal · {m.protein} g
+                    </span>
+                    <span className="block">
+                      {delta(dK, "kcal", false)} · {delta(dP, "g", dP > 0)} ·{" "}
+                      {delta(dC, "$", dC < 0)}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="mt-2.5 text-[11px] leading-relaxed text-muted">
+        Deltas are against the current dish, per portion. Swapping recalculates the
+        shopping list, the cost and the week&apos;s macros — and reshuffles the days if
+        the new dish keeps for a different length of time.
+      </p>
+    </div>
+  );
+}
+
+function DishCard({
+  planned,
+  index,
+  options,
+  onSwap,
+  onReset,
+}: {
+  planned: PlannedMeal;
+  index: number;
+  options: Meal[];
+  onSwap: (id: string) => void;
+  onReset: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [swapping, setSwapping] = useState(false);
   const { meal } = planned;
   const freezeDays = needsFreezing(planned);
 
@@ -96,6 +207,12 @@ function DishCard({ planned, index }: { planned: PlannedMeal; index: number }) {
               <span className="text-[11px] text-muted">
                 {planned.days.map((d) => DAYS[d]).join(" & ")} · {planned.servings} portions
               </span>
+              {planned.swapped ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-olive/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-olive">
+                  <ArrowLeftRight className="h-2.5 w-2.5" aria-hidden />
+                  Swapped
+                </span>
+              ) : null}
             </div>
             <h3 className="mt-1.5 font-display text-lg leading-tight text-ink">
               {meal.name}
@@ -134,6 +251,36 @@ function DishCard({ planned, index }: { planned: PlannedMeal; index: number }) {
             aria-hidden
           />
         </button>
+
+        <div className="flex border-t border-line">
+          <button
+            onClick={() => setSwapping((v) => !v)}
+            aria-expanded={swapping}
+            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 px-4 py-2 text-[11px] font-semibold text-muted transition-colors duration-200 hover:bg-sand hover:text-terracotta"
+          >
+            <ArrowLeftRight className="h-3 w-3" aria-hidden />
+            {swapping ? "Cancel swap" : "Swap this dish"}
+            {options.length ? (
+              <span className="text-muted/70">({options.length})</span>
+            ) : null}
+          </button>
+        </div>
+
+        {swapping ? (
+          <SwapPicker
+            planned={planned}
+            options={options}
+            onPick={(id) => {
+              onSwap(id);
+              setSwapping(false);
+            }}
+            onReset={() => {
+              onReset();
+              setSwapping(false);
+            }}
+            onClose={() => setSwapping(false)}
+          />
+        ) : null}
 
         <AnimatePresence initial={false}>
           {open ? (
@@ -218,7 +365,15 @@ function DishCard({ planned, index }: { planned: PlannedMeal; index: number }) {
   );
 }
 
-export function MealGrid({ plan }: { plan: WeekPlan }) {
+export function MealGrid({
+  plan,
+  onSwap,
+  onReset,
+}: {
+  plan: WeekPlan;
+  onSwap: (slot: "lunch" | "dinner", pickIndex: number, mealId: string) => void;
+  onReset: (slot: "lunch" | "dinner", pickIndex: number) => void;
+}) {
   // -1 on the server (it cannot know "today"), resolved on the client after
   // hydration. Reading the clock during render would desync the two.
   const todayIndex = useSyncExternalStore(
@@ -262,9 +417,26 @@ export function MealGrid({ plan }: { plan: WeekPlan }) {
           sub="Open any one for its per-portion ingredients, what you do to it on Sunday, and what is left to do on the day."
         />
         <div className="grid gap-3 lg:grid-cols-2">
-          {dishes.map((planned, i) => (
-            <DishCard key={planned.meal.id} planned={planned} index={i} />
-          ))}
+          {dishes.map((planned, i) => {
+            const slot = planned.meal.slot;
+            const pool = slot === "lunch" ? plan.lunchPool : plan.dinnerPool;
+            const onMenu = new Set(
+              (slot === "lunch" ? plan.lunches : plan.dinners).map((p) => p.meal.id),
+            );
+            // Everything qualifying that is not already on the menu — swapping in
+            // a dish you are already eating would just duplicate it.
+            const options = pool.passing.filter((m) => !onMenu.has(m.id));
+            return (
+              <DishCard
+                key={`${slot}-${planned.pickIndex}`}
+                planned={planned}
+                index={i}
+                options={options}
+                onSwap={(id) => onSwap(slot, planned.pickIndex, id)}
+                onReset={() => onReset(slot, planned.pickIndex)}
+              />
+            );
+          })}
         </div>
       </section>
     </div>

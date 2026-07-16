@@ -28,8 +28,8 @@ import {
   prepDuration,
   prepPlan,
 } from "@/lib/planner";
-import { DEFAULT_PREFS } from "@/lib/types";
-import type { Prefs } from "@/lib/types";
+import { DEFAULT_PREFS, overrideKey } from "@/lib/types";
+import type { Overrides, Prefs } from "@/lib/types";
 
 const TABS = [
   { id: "week", label: "This week", icon: CalendarDays },
@@ -84,7 +84,45 @@ export default function Home() {
     }
   }, [prefs, loaded]);
 
-  const plan = useMemo(() => buildWeek(weekIndex, prefs), [weekIndex, prefs]);
+  const [overrides, setOverrides] = useState<Overrides>({});
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("swaps");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring persisted state on mount is the intended use
+      if (saved) setOverrides(JSON.parse(saved));
+    } catch {
+      // Unreadable: start from the rotation's picks.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      window.localStorage.setItem("swaps", JSON.stringify(overrides));
+    } catch {
+      // Private browsing: swaps still work for this session.
+    }
+  }, [overrides, loaded]);
+
+  const swap = (slot: "lunch" | "dinner", pickIndex: number, mealId: string) =>
+    setOverrides((o) => ({ ...o, [overrideKey(weekIndex, slot, pickIndex)]: mealId }));
+
+  const resetSwap = (slot: "lunch" | "dinner", pickIndex: number) =>
+    setOverrides((o) => {
+      const next = { ...o };
+      delete next[overrideKey(weekIndex, slot, pickIndex)];
+      return next;
+    });
+
+  const swapCount = Object.keys(overrides).filter((k) =>
+    k.startsWith(`${weekIndex}:`),
+  ).length;
+
+  const plan = useMemo(
+    () => buildWeek(weekIndex, prefs, overrides),
+    [weekIndex, prefs, overrides],
+  );
   const lines = useMemo(() => buildShoppingList(plan), [plan]);
   const summary = useMemo(() => costSummary(plan, lines, prefs.people), [plan, lines, prefs.people]);
   const prepMinutes = useMemo(() => prepDuration(prepPlan(plan)), [plan]);
@@ -124,8 +162,22 @@ export default function Home() {
       <header className="mb-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-terracotta">
+            <p className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-terracotta">
               {`${prefs.people} ${prefs.people === 1 ? "person" : "people"} · lunches & dinners · your targets`}
+              {swapCount ? (
+                <button
+                  onClick={() =>
+                    setOverrides((o) =>
+                      Object.fromEntries(
+                        Object.entries(o).filter(([k]) => !k.startsWith(`${weekIndex}:`)),
+                      ),
+                    )
+                  }
+                  className="no-print cursor-pointer rounded-full bg-olive/10 px-2 py-0.5 text-[10px] tracking-[0.1em] text-olive transition-colors duration-200 hover:bg-olive/20"
+                >
+                  {swapCount} swapped · undo all
+                </button>
+              ) : null}
             </p>
             <Link
               href="/"
@@ -275,7 +327,9 @@ export default function Home() {
           </Card>
         ) : (
           <>
-            {tab === "week" ? <MealGrid plan={plan} /> : null}
+            {tab === "week" ? (
+              <MealGrid plan={plan} onSwap={swap} onReset={resetSwap} />
+            ) : null}
             {tab === "shop" ? <ShoppingList lines={lines} weekIndex={weekIndex} /> : null}
             {tab === "prep" ? <PrepTimeline plan={plan} /> : null}
             {tab === "cost" ? <CostView summary={summary} lines={lines} /> : null}

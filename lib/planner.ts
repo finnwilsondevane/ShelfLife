@@ -1,8 +1,9 @@
 import { filterPool, nutrition } from "./filters";
 import type { PoolResult } from "./filters";
 import { BY_ID, unitPrice } from "./ingredients";
-import { DINNER_POOL, LUNCH_POOL } from "./meals";
-import type { Meal, PlannedMeal, Prefs, ShoppingLine, WeekPlan } from "./types";
+import { DINNER_POOL, LUNCH_POOL, MEAL_BY_ID } from "./meals";
+import { overrideKey } from "./types";
+import type { Meal, Overrides, PlannedMeal, Prefs, ShoppingLine, WeekPlan } from "./types";
 
 export const DISHES_PER_SLOT = 4;
 export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -123,14 +124,18 @@ function distribute(days: number, dishes: number): number[] {
   return Array.from({ length: dishes }, (_, i) => base + (i < extra ? 1 : 0));
 }
 
-function schedule(picks: Meal[], people: number): PlannedMeal[] {
+function schedule(
+  picks: { meal: Meal; pickIndex: number; swapped: boolean }[],
+  people: number,
+): PlannedMeal[] {
   // Shortest-keeping dishes get the earliest days — salmon should not be sitting
-  // in the fridge until Friday.
-  const sorted = [...picks].sort((a, b) => a.keepsDays - b.keepsDays);
+  // in the fridge until Friday. Sorting happens after any swap, so swapping in a
+  // short keeper moves it to the front of the week on its own.
+  const sorted = [...picks].sort((a, b) => a.meal.keepsDays - b.meal.keepsDays);
   const counts = distribute(DAYS.length, sorted.length);
 
   let day = 0;
-  return sorted.map((meal, i) => {
+  return sorted.map(({ meal, pickIndex, swapped }, i) => {
     const days: number[] = [];
     for (let k = 0; k < counts[i]; k++) days.push(day++);
     const { kcal, protein, carbs, fat } = nutrition(meal);
@@ -142,16 +147,50 @@ function schedule(picks: Meal[], people: number): PlannedMeal[] {
       proteinPerServing: protein,
       carbsPerServing: carbs,
       fatPerServing: fat,
+      pickIndex,
+      swapped,
     };
   });
 }
 
-export function buildWeek(weekIndex: number, prefs: Prefs): WeekPlan {
+/**
+ * Swap a user's chosen dish over what the rotation drew. Applied before
+ * scheduling so day assignment, freeze flags, cost and macros all fall out of
+ * the swap for free rather than needing to be patched afterwards.
+ */
+function applyOverrides(
+  picks: Meal[],
+  weekIndex: number,
+  slot: "lunch" | "dinner",
+  overrides: Overrides,
+) {
+  return picks.map((meal, pickIndex) => {
+    const chosen = overrides[overrideKey(weekIndex, slot, pickIndex)];
+    const swap = chosen ? MEAL_BY_ID[chosen] : undefined;
+    // An override naming a dish that no longer exists (renamed id, edited
+    // meals.ts) falls back to the rotation's pick rather than blanking the slot.
+    return swap && swap.slot === slot
+      ? { meal: swap, pickIndex, swapped: true }
+      : { meal, pickIndex, swapped: false };
+  });
+}
+
+export function buildWeek(
+  weekIndex: number,
+  prefs: Prefs,
+  overrides: Overrides = {},
+): WeekPlan {
   const lunchPool = filterPool(LUNCH_POOL, prefs);
   const dinnerPool = filterPool(DINNER_POOL, prefs);
 
-  const lunches = schedule(pickForWeek(lunchPool.passing, weekIndex, 1), prefs.people);
-  const dinners = schedule(pickForWeek(dinnerPool.passing, weekIndex, 2), prefs.people);
+  const lunches = schedule(
+    applyOverrides(pickForWeek(lunchPool.passing, weekIndex, 1), weekIndex, "lunch", overrides),
+    prefs.people,
+  );
+  const dinners = schedule(
+    applyOverrides(pickForWeek(dinnerPool.passing, weekIndex, 2), weekIndex, "dinner", overrides),
+    prefs.people,
+  );
 
   // A week needs both halves. With neither, there is nothing to schedule and the
   // UI shows why rather than rendering a broken grid.

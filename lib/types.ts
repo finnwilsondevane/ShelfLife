@@ -188,7 +188,19 @@ export interface PlannedMeal {
   proteinPerServing: number;
   carbsPerServing: number;
   fatPerServing: number;
+  /** Slot this dish was drawn into, before scheduling reorders by keeping time.
+   *  Swaps key off this, so a swap survives the reorder it causes. */
+  pickIndex: number;
+  /** True when the user chose this dish over the one the rotation picked. */
+  swapped: boolean;
 }
+
+/** `${weekIndex}:${slot}:${pickIndex}` -> meal id. Scoped per week, so swapping
+ *  this week's salmon does not rewrite every other week. */
+export type Overrides = Record<string, string>;
+
+export const overrideKey = (weekIndex: number, slot: "lunch" | "dinner", pickIndex: number) =>
+  `${weekIndex}:${slot}:${pickIndex}`;
 
 export interface WeekPlan {
   weekIndex: number;
