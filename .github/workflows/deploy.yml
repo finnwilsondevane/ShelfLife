@@ -1,0 +1,56 @@
+# GitHub Pages only serves files; it will not run a build. So this runs
+# `npm run build` on GitHub's machines and hands the exported HTML to Pages.
+# Net effect: push to main, and the live site updates on its own.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Lets you redeploy by hand from the Actions tab without pushing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. Queue instead of cancelling, so a push mid-deploy
+# still ends up live rather than being dropped.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+        env:
+          # Switches on basePath/assetPrefix, since the site is served from
+          # /ShelfLife rather than the domain root. See next.config.ts.
+          GITHUB_PAGES: "true"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
