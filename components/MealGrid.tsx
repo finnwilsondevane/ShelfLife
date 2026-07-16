@@ -6,7 +6,6 @@ import { useState, useSyncExternalStore } from "react";
 import { BY_ID, describeQty } from "@/lib/ingredients";
 import {
   DAYS,
-  PEOPLE,
   currentWeekIndex,
   money,
   needsFreezing,
@@ -169,7 +168,8 @@ function DishCard({ planned, index }: { planned: PlannedMeal; index: number }) {
                   </ul>
                   <p className="mt-3 border-t border-line pt-2 text-[11px] text-muted">
                     Buy for {planned.servings} portions — that is {planned.days.length}{" "}
-                    {planned.days.length === 1 ? "day" : "days"} for {PEOPLE}.
+                    {planned.days.length === 1 ? "day" : "days"} for{" "}
+                    {planned.servings / planned.days.length}.
                   </p>
                 </div>
 

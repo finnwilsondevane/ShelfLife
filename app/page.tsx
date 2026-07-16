@@ -6,18 +6,18 @@ import {
   ChefHat,
   ChevronLeft,
   ChevronRight,
+  RotateCcw,
   ShoppingBasket,
   Wallet,
 } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CostView } from "@/components/CostView";
+import { Filters } from "@/components/Filters";
 import { MealGrid } from "@/components/MealGrid";
 import { PrepTimeline } from "@/components/PrepTimeline";
 import { ShoppingList } from "@/components/ShoppingList";
 import { Card } from "@/components/ui";
 import {
-  DAYS,
-  PEOPLE,
   buildShoppingList,
   buildWeek,
   costSummary,
@@ -27,6 +27,8 @@ import {
   prepDuration,
   prepPlan,
 } from "@/lib/planner";
+import { DEFAULT_PREFS } from "@/lib/types";
+import type { Prefs } from "@/lib/types";
 
 const TABS = [
   { id: "week", label: "This week", icon: CalendarDays },
@@ -47,25 +49,58 @@ export default function Home() {
   const baseWeek = useSyncExternalStore(NEVER_CHANGES, currentWeekIndex, () => 0);
   const [offset, setOffset] = useState(0);
   const [tab, setTab] = useState<TabId>("week");
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const weekIndex = baseWeek + offset;
 
-  const plan = useMemo(() => buildWeek(weekIndex), [weekIndex]);
+  const [loaded, setLoaded] = useState(false);
+
+  // Filters are the user's own settings, so they outlive the tab. Restored after
+  // mount because localStorage has no server equivalent.
+  useEffect(() => {
+    let restored: Prefs | null = null;
+    try {
+      const saved = window.localStorage.getItem("prefs");
+      // Merged over defaults so a saved blob from an older build cannot leave a
+      // new field undefined and crash the filter maths.
+      if (saved) restored = { ...DEFAULT_PREFS, ...JSON.parse(saved) };
+    } catch {
+      // Unreadable: fall back to defaults.
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring persisted state on mount is the intended use
+    if (restored) setPrefs(restored);
+    setLoaded(true);
+  }, []);
+
+  // Persist as a effect of the value, not inside each handler: handlers use
+  // functional updates, so they never hold the whole next object to save.
+  // Gated on `loaded` so the first render cannot write defaults over saved prefs.
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      window.localStorage.setItem("prefs", JSON.stringify(prefs));
+    } catch {
+      // Private browsing: filters still work for this session.
+    }
+  }, [prefs, loaded]);
+
+  const plan = useMemo(() => buildWeek(weekIndex, prefs), [weekIndex, prefs]);
   const lines = useMemo(() => buildShoppingList(plan), [plan]);
-  const summary = useMemo(() => costSummary(plan, lines), [plan, lines]);
+  const summary = useMemo(() => costSummary(plan, lines, prefs.people), [plan, lines, prefs.people]);
   const prepMinutes = useMemo(() => prepDuration(prepPlan(plan)), [plan]);
 
+  // byDay is empty when filters kill the week, so every average is guarded
+  // against dividing into nothing.
   const avg = useMemo(() => {
-    const kcal = plan.byDay.reduce(
-      (s, d) => s + d.lunch.kcalPerServing + d.dinner.kcalPerServing,
-      0,
-    );
-    const protein = plan.byDay.reduce(
-      (s, d) => s + d.lunch.proteinPerServing + d.dinner.proteinPerServing,
-      0,
-    );
+    const sum = (pick: (p: (typeof plan.byDay)[number]) => number) =>
+      plan.byDay.reduce((s, d) => s + pick(d), 0);
+    const n = plan.byDay.length || 1;
     return {
-      kcal: Math.round(kcal / DAYS.length),
-      protein: Math.round(protein / DAYS.length),
+      kcal: Math.round(sum((d) => d.lunch.kcalPerServing + d.dinner.kcalPerServing) / n),
+      protein: Math.round(
+        sum((d) => d.lunch.proteinPerServing + d.dinner.proteinPerServing) / n,
+      ),
+      carbs: Math.round(sum((d) => d.lunch.carbsPerServing + d.dinner.carbsPerServing) / n),
+      fat: Math.round(sum((d) => d.lunch.fatPerServing + d.dinner.fatPerServing) / n),
     };
   }, [plan]);
 
@@ -89,7 +124,7 @@ export default function Home() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-terracotta">
-              {`High protein · ${PEOPLE} people · lunches & dinners`}
+              {`${prefs.people} ${prefs.people === 1 ? "person" : "people"} · lunches & dinners · your targets`}
             </p>
             <h1 className="mt-1.5 font-display text-4xl leading-none text-ink sm:text-5xl">
               Shelf Life
@@ -128,25 +163,39 @@ export default function Home() {
         </div>
 
         <Card className="mt-6 overflow-hidden">
-          {/* gap-px over a line-coloured bed: dividers land correctly at both 2
-              and 4 columns, where per-cell borders leave stray half-width rules. */}
-          <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
+          {/* gap-px over a line-coloured bed: dividers land correctly at every
+              column count, where per-cell borders leave stray half-width rules. */}
+          <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 lg:grid-cols-6">
             {[
               {
                 label: "A day",
-                value: `${avg.kcal.toLocaleString()} kcal`,
-                sub: "lunch + dinner, per person",
+                value: plan.viable ? `${avg.kcal.toLocaleString()} kcal` : "—",
+                sub: `target ${prefs.kcal.toLocaleString()}`,
               },
-              { label: "Protein", value: `${avg.protein} g`, sub: "a day, per person" },
+              {
+                label: "Protein",
+                value: plan.viable ? `${avg.protein} g` : "—",
+                sub: `floor ${prefs.minProtein} g`,
+              },
+              {
+                label: "Carbs",
+                value: plan.viable ? `${avg.carbs} g` : "—",
+                sub: `cap ${prefs.maxCarbs} g`,
+              },
+              {
+                label: "Fat",
+                value: plan.viable ? `${avg.fat} g` : "—",
+                sub: `cap ${prefs.maxFat} g`,
+              },
               {
                 label: "Weekly shop",
-                value: money(summary.total),
-                sub: `${money(summary.perPersonPerDay)} per person a day`,
+                value: plan.viable ? money(summary.total) : "—",
+                sub: plan.viable ? `${money(summary.perPersonPerDay)} pp a day` : "no plan",
               },
               {
                 label: "Sunday",
-                value: `~${Math.round(prepMinutes / 5) * 5} min`,
-                sub: `for all ${totalServings} portions`,
+                value: plan.viable ? `~${Math.round(prepMinutes / 5) * 5} min` : "—",
+                sub: plan.viable ? `for ${totalServings} portions` : "no plan",
               },
             ].map((s) => (
               <div key={s.label} className="bg-surface px-4 py-3">
@@ -161,6 +210,15 @@ export default function Home() {
             ))}
           </div>
         </Card>
+
+        <div className="no-print mt-4">
+          <Filters
+            prefs={prefs}
+            setPrefs={setPrefs}
+            lunchPool={plan.lunchPool}
+            dinnerPool={plan.dinnerPool}
+          />
+        </div>
       </header>
 
       <nav className="no-print mb-8 flex flex-wrap gap-1 border-b border-line">
@@ -191,10 +249,34 @@ export default function Home() {
 
       {/* The key remounts the panel on tab or week change, which re-runs `.rise`. */}
       <div key={`${tab}-${weekIndex}`} className="rise">
-        {tab === "week" ? <MealGrid plan={plan} /> : null}
-        {tab === "shop" ? <ShoppingList lines={lines} weekIndex={weekIndex} /> : null}
-        {tab === "prep" ? <PrepTimeline plan={plan} /> : null}
-        {tab === "cost" ? <CostView summary={summary} lines={lines} /> : null}
+        {!plan.viable ? (
+          <Card className="px-6 py-12 text-center">
+            <h2 className="font-display text-2xl text-ink">No week to build</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted">
+              {plan.lunchPool.passing.length === 0 && plan.dinnerPool.passing.length === 0
+                ? "Your filters rule out every dish in the pool."
+                : plan.lunchPool.passing.length === 0
+                  ? "No lunch survives your filters, and a week needs both meals."
+                  : "No dinner survives your filters, and a week needs both meals."}{" "}
+              Open the filters above and loosen something — the calorie window is usually
+              the cheapest one to widen.
+            </p>
+            <button
+              onClick={() => setPrefs(DEFAULT_PREFS)}
+              className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-colors duration-200 hover:bg-sand"
+            >
+              <RotateCcw className="h-4 w-4" aria-hidden />
+              Reset filters
+            </button>
+          </Card>
+        ) : (
+          <>
+            {tab === "week" ? <MealGrid plan={plan} /> : null}
+            {tab === "shop" ? <ShoppingList lines={lines} weekIndex={weekIndex} /> : null}
+            {tab === "prep" ? <PrepTimeline plan={plan} /> : null}
+            {tab === "cost" ? <CostView summary={summary} lines={lines} /> : null}
+          </>
+        )}
       </div>
 
       <footer className="mt-16 border-t border-line pt-6 text-[11px] leading-relaxed text-muted">

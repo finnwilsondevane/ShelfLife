@@ -1,10 +1,14 @@
+import { filterPool, nutrition } from "./filters";
+import type { PoolResult } from "./filters";
 import { BY_ID, unitPrice } from "./ingredients";
 import { DINNER_POOL, LUNCH_POOL } from "./meals";
-import type { Meal, PlannedMeal, ShoppingLine, WeekPlan } from "./types";
+import type { Meal, PlannedMeal, Prefs, ShoppingLine, WeekPlan } from "./types";
 
-export const PEOPLE = 2;
 export const DISHES_PER_SLOT = 4;
 export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export { nutrition };
+export type { Macros } from "./filters";
 
 /** A Sunday. Week indices count forward from here so plans are stable forever. */
 const ANCHOR = Date.UTC(2024, 0, 7);
@@ -89,28 +93,19 @@ function chainByOverlap(pool: Meal[], seed: number): Meal[] {
 }
 
 function pickForWeek(pool: Meal[], weekIndex: number, salt: number): Meal[] {
-  const cycleLength = Math.ceil(pool.length / DISHES_PER_SLOT);
+  // Filters can leave fewer than four dishes. Take what exists rather than
+  // wrapping the window onto itself, which would serve the same dish twice.
+  const take = Math.min(DISHES_PER_SLOT, pool.length);
+  if (take === 0) return [];
+
+  const cycleLength = Math.max(1, Math.ceil(pool.length / take));
   const cycle = Math.floor(weekIndex / cycleLength);
   const slot = ((weekIndex % cycleLength) + cycleLength) % cycleLength;
   const chain = chainByOverlap(pool, cycle * 7919 + salt);
 
-  const start = slot * DISHES_PER_SLOT;
-  return Array.from(
-    { length: DISHES_PER_SLOT },
-    (_, i) => chain[(start + i) % chain.length],
-  );
-}
-
-export function nutrition(meal: Meal): { kcal: number; protein: number } {
-  let kcal = 0;
-  let protein = 0;
-  for (const { id, qty } of meal.ingredients) {
-    const ing = BY_ID[id];
-    if (!ing) continue;
-    kcal += (qty * ing.kcalPer100) / 100;
-    protein += (qty * ing.proteinPer100) / 100;
-  }
-  return { kcal: Math.round(kcal), protein: Math.round(protein) };
+  const start = slot * take;
+  // take <= chain.length, so consecutive indices mod length stay distinct.
+  return Array.from({ length: take }, (_, i) => chain[(start + i) % chain.length]);
 }
 
 export function servingCost(meal: Meal): number {
@@ -122,12 +117,13 @@ export function servingCost(meal: Meal): number {
 
 /** Spread `days` days across `dishes` dishes as evenly as possible: 7 over 4 gives 2,2,2,1. */
 function distribute(days: number, dishes: number): number[] {
+  if (dishes <= 0) return [];
   const base = Math.floor(days / dishes);
   const extra = days % dishes;
   return Array.from({ length: dishes }, (_, i) => base + (i < extra ? 1 : 0));
 }
 
-function schedule(picks: Meal[]): PlannedMeal[] {
+function schedule(picks: Meal[], people: number): PlannedMeal[] {
   // Shortest-keeping dishes get the earliest days — salmon should not be sitting
   // in the fridge until Friday.
   const sorted = [...picks].sort((a, b) => a.keepsDays - b.keepsDays);
@@ -137,33 +133,43 @@ function schedule(picks: Meal[]): PlannedMeal[] {
   return sorted.map((meal, i) => {
     const days: number[] = [];
     for (let k = 0; k < counts[i]; k++) days.push(day++);
-    const { kcal, protein } = nutrition(meal);
+    const { kcal, protein, carbs, fat } = nutrition(meal);
     return {
       meal,
       days,
-      servings: days.length * PEOPLE,
+      servings: days.length * people,
       kcalPerServing: kcal,
       proteinPerServing: protein,
+      carbsPerServing: carbs,
+      fatPerServing: fat,
     };
   });
 }
 
-export function buildWeek(weekIndex: number): WeekPlan {
-  const lunches = schedule(pickForWeek(LUNCH_POOL, weekIndex, 1));
-  const dinners = schedule(pickForWeek(DINNER_POOL, weekIndex, 2));
+export function buildWeek(weekIndex: number, prefs: Prefs): WeekPlan {
+  const lunchPool = filterPool(LUNCH_POOL, prefs);
+  const dinnerPool = filterPool(DINNER_POOL, prefs);
 
-  const find = (list: PlannedMeal[], day: number) =>
-    list.find((p) => p.days.includes(day))!;
+  const lunches = schedule(pickForWeek(lunchPool.passing, weekIndex, 1), prefs.people);
+  const dinners = schedule(pickForWeek(dinnerPool.passing, weekIndex, 2), prefs.people);
+
+  // A week needs both halves. With neither, there is nothing to schedule and the
+  // UI shows why rather than rendering a broken grid.
+  const viable = lunches.length > 0 && dinners.length > 0;
+
+  const find = (list: PlannedMeal[], day: number) => list.find((p) => p.days.includes(day))!;
 
   return {
     weekIndex,
     start: weekStart(weekIndex),
     lunches,
     dinners,
-    byDay: DAYS.map((_, day) => ({
-      lunch: find(lunches, day),
-      dinner: find(dinners, day),
-    })),
+    viable,
+    lunchPool,
+    dinnerPool,
+    byDay: viable
+      ? DAYS.map((_, day) => ({ lunch: find(lunches, day), dinner: find(dinners, day) }))
+      : [],
   };
 }
 
@@ -227,7 +233,11 @@ export interface CostSummary {
   leftoverValue: number;
 }
 
-export function costSummary(plan: WeekPlan, lines: ShoppingLine[]): CostSummary {
+export function costSummary(
+  plan: WeekPlan,
+  lines: ShoppingLine[],
+  people: number,
+): CostSummary {
   const total = lines.reduce((s, l) => s + l.cost, 0);
   const servings = [...plan.lunches, ...plan.dinners].reduce((s, p) => s + p.servings, 0);
 
@@ -238,8 +248,8 @@ export function costSummary(plan: WeekPlan, lines: ShoppingLine[]): CostSummary 
 
   return {
     total,
-    perPersonPerDay: total / (PEOPLE * DAYS.length),
-    perServing: total / servings,
+    perPersonPerDay: total / (people * DAYS.length),
+    perServing: servings ? total / servings : 0,
     byAisle: [...aisles.entries()]
       .map(([aisle, cost]) => ({ aisle, cost }))
       .sort((a, b) => b.cost - a.cost),
@@ -312,3 +322,5 @@ export function prepDuration(blocks: PrepBlock[]): number {
 
 export const money = (n: number) =>
   n.toLocaleString("en-CA", { style: "currency", currency: "CAD" });
+
+export type { PoolResult };

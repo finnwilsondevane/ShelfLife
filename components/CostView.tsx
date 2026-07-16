@@ -1,6 +1,6 @@
 "use client";
 
-import { PEOPLE, DAYS, money } from "@/lib/planner";
+import { money } from "@/lib/planner";
 import type { CostSummary } from "@/lib/planner";
 import { AISLE_LABEL } from "@/lib/types";
 import type { Aisle, ShoppingLine } from "@/lib/types";
@@ -25,7 +25,10 @@ export function CostView({
 }) {
   const maxAisle = Math.max(...summary.byAisle.map((a) => a.cost));
   const maxMeal = Math.max(...summary.byMeal.map((m) => m.cost));
-  const takeaway = PEOPLE * DAYS.length * 2 * 18;
+  // Priced against however many portions this plan actually makes, so the
+  // comparison tracks the people count instead of assuming two.
+  const servings = summary.byMeal.reduce((s, m) => s + m.servings, 0);
+  const takeaway = servings * 18;
 
   return (
     <div className="space-y-8">
