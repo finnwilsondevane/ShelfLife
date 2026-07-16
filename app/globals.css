@@ -1,26 +1,104 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-cream: #fbf7f2;
+  --color-surface: #ffffff;
+  --color-sand: #f4ece2;
+  --color-line: #e8ded2;
+  --color-ink: #2a1a12;
+  --color-muted: #6b5a4e;
+  --color-terracotta: #c2410c;
+  --color-ember: #9a3412;
+  --color-gold: #b45309;
+  --color-olive: #4d7c0f;
+
+  --font-display: var(--font-playfair), Georgia, serif;
+  --font-sans: var(--font-karla), ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :focus-visible {
+    outline: 2px solid var(--color-terracotta);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/*
+ * Entrance animations are plain CSS rather than framer-motion: they are simple
+ * fades that need no layout measurement, so they cost no JS and no hydration.
+ * Framer is still used where it earns its keep — the tab underline's shared
+ * layout and the dish card's height:auto expand.
+ */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 240ms ease-out backwards;
+}
+
+/* Bars grow from the left. scaleX rather than width keeps it off the layout path. */
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.grow {
+  transform-origin: left center;
+  animation: grow 500ms ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Faint warmth behind the page so large cream fields do not read as flat grey. */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+      circle at 18% 12%,
+      rgba(194, 65, 12, 0.06),
+      transparent 45%
+    ),
+    radial-gradient(circle at 88% 6%, rgba(180, 83, 9, 0.06), transparent 40%);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
 }
