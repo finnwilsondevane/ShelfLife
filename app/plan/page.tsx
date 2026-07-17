@@ -8,11 +8,13 @@ import {
   ChevronRight,
   RotateCcw,
   ShoppingBasket,
+  Sparkles,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CostView } from "@/components/CostView";
+import { Discover } from "@/components/Discover";
 import { Filters } from "@/components/Filters";
 import { MealGrid } from "@/components/MealGrid";
 import { PrepTimeline } from "@/components/PrepTimeline";
@@ -36,6 +38,7 @@ const TABS = [
   { id: "shop", label: "Shopping list", icon: ShoppingBasket },
   { id: "prep", label: "Sunday prep", icon: ChefHat },
   { id: "cost", label: "Cost", icon: Wallet },
+  { id: "discover", label: "Discover", icon: Sparkles },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -305,7 +308,9 @@ export default function Home() {
 
       {/* The key remounts the panel on tab or week change, which re-runs `.rise`. */}
       <div key={`${tab}-${weekIndex}`} className="rise">
-        {!plan.viable ? (
+        {/* Discovery does not depend on a buildable week — and is most useful
+            when the filters have left you without one. */}
+        {tab === "discover" ? <Discover prefs={prefs} /> : !plan.viable ? (
           <Card className="px-6 py-12 text-center">
             <h2 className="font-display text-2xl text-ink">No week to build</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted">

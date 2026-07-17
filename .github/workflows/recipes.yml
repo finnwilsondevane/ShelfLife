@@ -1,0 +1,52 @@
+# Grows the discovery index. Pages cannot run a scraper and the browser cannot
+# hold an API key, so the fetch happens here: this commits lib/discovered.json,
+# which makes deploy.yml run, which ships the new recipes. The site stays static.
+name: Fetch recipes
+
+on:
+  schedule:
+    # Thursdays 06:00 UTC — before Saturday's shop, so anything new has landed
+    # by the time you are choosing next week's dishes.
+    - cron: "0 6 * * 4"
+  workflow_dispatch:
+
+# Never let two fetches interleave: both would read the same index and the
+# second commit would drop the first one's recipes.
+concurrency:
+  group: recipes
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch from Spoonacular
+        env:
+          # Never printed, never committed — GitHub redacts it from logs, and the
+          # script only ever puts it in a request header.
+          SPOONACULAR_KEY: ${{ secrets.SPOONACULAR_KEY }}
+        run: npx tsx scripts/fetch-recipes.ts
+
+      - name: Commit the index if it changed
+        run: |
+          if git diff --quiet -- lib/discovered.json; then
+            echo "no new recipes — nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/discovered.json
+          git commit -m "Update recipe index"
+          git push
