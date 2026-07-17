@@ -10,11 +10,12 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { INGREDIENTS } from "@/lib/ingredients";
 import { money } from "@/lib/planner";
 import { basketAt, findStores, flyerUrl, formatDistance, geocode } from "@/lib/stores";
 import type { PriceBook, Store } from "@/lib/stores";
 import { AISLE_LABEL, AISLE_ORDER } from "@/lib/types";
-import type { Aisle, ShoppingLine } from "@/lib/types";
+import type { Aisle, Ingredient, ShoppingLine } from "@/lib/types";
 import { Card, SectionHeading } from "./ui";
 
 export function Stores({ lines }: { lines: ShoppingLine[] }) {
@@ -27,6 +28,7 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
   const [saved, setSaved] = useState<Store[]>([]);
   const [book, setBook] = useState<PriceBook>({});
   const [editing, setEditing] = useState<string | null>(null);
+  const [priceQuery, setPriceQuery] = useState("");
 
   useEffect(() => {
     try {
@@ -120,14 +122,27 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
   const uneven = rankable && new Set(baskets.map((b) => b.known)).size > 1;
   const unpriced = baskets.filter((b) => b.known === 0);
 
-  const byAisle = useMemo(
-    () =>
-      AISLE_ORDER.map((aisle) => ({
-        aisle,
-        items: lines.filter((l) => l.ingredient.aisle === aisle),
-      })).filter((g) => g.items.length),
+  // The price book covers the whole ingredient database, not just this
+  // week's list — meals rotate week to week, so a price you enter for an
+  // ingredient that isn't needed today is one you won't have to re-enter
+  // when it comes back in rotation.
+  const inThisWeek = useMemo(
+    () => new Set(lines.map((l) => l.ingredient.id)),
     [lines],
   );
+  const linesById = useMemo(
+    () => new Map(lines.map((l) => [l.ingredient.id, l])),
+    [lines],
+  );
+  const priceByAisle = useMemo(() => {
+    const q = priceQuery.trim().toLowerCase();
+    return AISLE_ORDER.map((aisle) => ({
+      aisle,
+      items: INGREDIENTS.filter(
+        (i) => i.aisle === aisle && (!q || i.name.toLowerCase().includes(q)),
+      ).sort((a, b) => Number(inThisWeek.has(b.id)) - Number(inThisWeek.has(a.id))),
+    })).filter((g) => g.items.length);
+  }, [priceQuery, inThisWeek]);
 
   return (
     <div className="space-y-6">
@@ -295,53 +310,82 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
                   Price book · {saved.find((s) => s.id === editing)?.name}
                 </h3>
                 <p className="text-[11px] leading-relaxed text-muted">
-                  What one pack costs at this store. Blank means fall back to the estimate.
-                  Only this week&apos;s shopping list is shown — there is no point pricing
-                  things you are not buying.
+                  {"What one pack costs at this store. Blank means fall back to the estimate. This is the full ingredient database, not just this week's list —"}{" "}
+                  <strong>this week</strong>
+                  {" items sort to the top of each aisle, but pricing anything else now means it's already known the next time it comes up in rotation."}
                 </p>
               </div>
+              <div className="border-b border-line px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+                  <input
+                    value={priceQuery}
+                    onChange={(e) => setPriceQuery(e.target.value)}
+                    placeholder="Search all ingredients…"
+                    aria-label="Search ingredients"
+                    className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+                  />
+                  <span className="shrink-0 text-[11px] tabular-nums text-muted">
+                    {priceByAisle.reduce((n, g) => n + g.items.length, 0)} of{" "}
+                    {INGREDIENTS.length}
+                  </span>
+                </div>
+              </div>
               <div className="max-h-96 space-y-4 overflow-y-auto px-4 py-4">
-                {byAisle.map(({ aisle, items }) => (
+                {priceByAisle.map(({ aisle, items }) => (
                   <div key={aisle}>
                     <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">
                       {AISLE_LABEL[aisle as Aisle]}
                     </div>
                     <ul className="mt-1.5 space-y-1">
-                      {items.map((l) => (
-                        <li key={l.ingredient.id} className="flex items-center gap-3">
-                          <label
-                            htmlFor={`p-${l.ingredient.id}`}
-                            className="min-w-0 flex-1 text-[13px] text-ink"
-                          >
-                            {l.ingredient.name}
-                            <span className="ml-1.5 text-[11px] text-muted">
-                              {l.ingredient.packLabel}
+                      {items.map((ingredient: Ingredient) => {
+                        const line = linesById.get(ingredient.id);
+                        return (
+                          <li key={ingredient.id} className="flex items-center gap-3">
+                            <label
+                              htmlFor={`p-${ingredient.id}`}
+                              className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-ink"
+                            >
+                              <span className="truncate">{ingredient.name}</span>
+                              {line ? (
+                                <span className="shrink-0 rounded-full bg-olive/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-olive">
+                                  this week
+                                </span>
+                              ) : null}
+                              <span className="shrink-0 text-[11px] text-muted">
+                                {ingredient.packLabel}
+                              </span>
+                            </label>
+                            <span className="shrink-0 text-[11px] text-muted">
+                              est {money(ingredient.packPrice)}
                             </span>
-                          </label>
-                          <span className="shrink-0 text-[11px] text-muted">
-                            est {money(l.ingredient.packPrice)}
-                          </span>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <span className="text-[11px] text-muted">$</span>
-                            <input
-                              id={`p-${l.ingredient.id}`}
-                              type="number"
-                              inputMode="decimal"
-                              step="0.01"
-                              min="0"
-                              value={book[editing]?.[l.ingredient.id] ?? ""}
-                              onChange={(e) =>
-                                setPrice(editing, l.ingredient.id, e.target.value)
-                              }
-                              placeholder="—"
-                              className="w-20 rounded-lg border border-line bg-surface px-2 py-1 text-right text-[13px] tabular-nums text-ink outline-none focus:border-terracotta"
-                            />
-                          </div>
-                        </li>
-                      ))}
+                            <div className="flex shrink-0 items-center gap-1">
+                              <span className="text-[11px] text-muted">$</span>
+                              <input
+                                id={`p-${ingredient.id}`}
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                min="0"
+                                value={book[editing]?.[ingredient.id] ?? ""}
+                                onChange={(e) =>
+                                  setPrice(editing, ingredient.id, e.target.value)
+                                }
+                                placeholder="—"
+                                className="w-20 rounded-lg border border-line bg-surface px-2 py-1 text-right text-[13px] tabular-nums text-ink outline-none focus:border-terracotta"
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}
+                {priceByAisle.length === 0 ? (
+                  <p className="py-6 text-center text-[13px] text-muted">
+                    No ingredients match &quot;{priceQuery}&quot;.
+                  </p>
+                ) : null}
               </div>
             </Card>
           ) : null}
