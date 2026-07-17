@@ -8,12 +8,12 @@ import { Card, SectionHeading, SlotTag, Stat } from "./ui";
 
 /** One hue, stepped by lightness — the aisles are one quantity, not six categories. */
 const BAR_SHADES = [
-  "#9a3412",
-  "#c2410c",
-  "#d4622a",
-  "#e08050",
-  "#eaa079",
-  "#f0bfa3",
+  "#6f482c",
+  "#8f5c38",
+  "#a97d5d",
+  "#c29d82",
+  "#dcbea7",
+  "#f5decc",
 ];
 
 export function CostView({

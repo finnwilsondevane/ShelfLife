@@ -12,11 +12,20 @@
  * committed .png files sidestep that entirely.
  *
  * Re-run by hand whenever the mark changes:
- *   npx tsx scripts/gen-brand-images.ts
+ *   npx tsx scripts/gen-brand-images.tsx
+ *
+ * satori (what ImageResponse renders through) can't read CSS custom
+ * properties, so these are literal — kept in sync with app/globals.css by
+ * hand. If you change the palette there, change it here too.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
+
+const CREAM = "#f6e8ea";
+const INK = "#1c1c1c";
+const MUTED = "#5c5650";
+const TERRACOTTA = "#8f5c38";
 
 const fontDir = join(process.cwd(), "assets/fonts");
 const playfair = readFileSync(join(fontDir, "PlayfairDisplay-Bold.ttf"));
@@ -35,7 +44,7 @@ function mark(fontSize: number, marginTop: number, radius?: number) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#c2410c",
+        background: TERRACOTTA,
         ...(radius ? { borderRadius: radius } : {}),
       }}
     >
@@ -43,7 +52,7 @@ function mark(fontSize: number, marginTop: number, radius?: number) {
         style={{
           fontFamily: "Playfair Display",
           fontSize,
-          color: "#fbf7f2",
+          color: CREAM,
           lineHeight: 1,
           marginTop,
         }}
@@ -85,7 +94,7 @@ async function main() {
             flexDirection: "column",
             justifyContent: "center",
             padding: "0 90px",
-            background: "#fbf7f2",
+            background: CREAM,
           }}
         >
           <div
@@ -96,14 +105,14 @@ async function main() {
               width: 72,
               height: 72,
               borderRadius: 16,
-              background: "#c2410c",
+              background: TERRACOTTA,
             }}
           >
             <span
               style={{
                 fontFamily: "Playfair Display",
                 fontSize: 48,
-                color: "#fbf7f2",
+                color: CREAM,
                 lineHeight: 1,
                 marginTop: -3,
               }}
@@ -115,7 +124,7 @@ async function main() {
             style={{
               fontFamily: "Playfair Display",
               fontSize: 108,
-              color: "#2a1a12",
+              color: INK,
               lineHeight: 1,
               marginTop: 28,
             }}
@@ -126,7 +135,7 @@ async function main() {
             style={{
               fontFamily: "Karla",
               fontSize: 32,
-              color: "#6b5a4e",
+              color: MUTED,
               marginTop: 22,
             }}
           >

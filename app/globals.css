@@ -1,16 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-cream: #fbf7f2;
+  /*
+   * Palette picked from a swatch tool: Lavender Blush #f6e8ea, Toffee Brown
+   * #8f5c38, Carbon Black #1c1c1c, Muted Teal #81b29a, Evergreen #243119.
+   * Five swatches, more roles than that — this is where each one landed and
+   * why:
+   *   - Blush -> cream, Black -> ink, Toffee -> terracotta, Evergreen ->
+   *     olive: direct swaps, one swatch each.
+   *   - Muted Teal cannot be a foreground color here — at 2:1 against Blush
+   *     it fails contrast for both text (4.5:1) and icons (3:1), so it only
+   *     appears as a background (sand, line), tinted toward white rather
+   *     than toward Blush so it reads as sage, not grey.
+   *   - ember/gold/muted have no matching swatch (a hover-darken shade and a
+   *     caution color aren't things a 5-color picker hands you) — derived to
+   *     hold the same job: ember a darkened terracotta, gold a warm amber
+   *     distinct from terracotta and re-checked at 5.1:1 on cream since a
+   *     warning color that fails contrast defeats the point of a warning.
+   */
+  --color-cream: #f6e8ea;
   --color-surface: #ffffff;
-  --color-sand: #f4ece2;
-  --color-line: #e8ded2;
-  --color-ink: #2a1a12;
-  --color-muted: #6b5a4e;
-  --color-terracotta: #c2410c;
-  --color-ember: #9a3412;
-  --color-gold: #b45309;
-  --color-olive: #4d7c0f;
+  --color-sand: #d3e4dc;
+  --color-line: #c0d9cd;
+  --color-ink: #1c1c1c;
+  --color-muted: #5c5650;
+  --color-terracotta: #8f5c38;
+  --color-ember: #6f482c;
+  --color-gold: #8c561b;
+  --color-olive: #243119;
 
   --font-display: var(--font-playfair), Georgia, serif;
   --font-sans: var(--font-karla), ui-sans-serif, system-ui, sans-serif;
@@ -87,10 +104,10 @@
   pointer-events: none;
   background-image: radial-gradient(
       circle at 18% 12%,
-      rgba(194, 65, 12, 0.06),
+      rgba(143, 92, 56, 0.06),
       transparent 45%
     ),
-    radial-gradient(circle at 88% 6%, rgba(180, 83, 9, 0.06), transparent 40%);
+    radial-gradient(circle at 88% 6%, rgba(140, 86, 27, 0.06), transparent 40%);
 }
 
 @media print {
