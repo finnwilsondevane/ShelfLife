@@ -28,9 +28,26 @@ export interface Discovered {
   /** Spoonacular's own diet flags, e.g. "gluten free", "dairy free". */
   diets: string[];
   dishTypes: string[];
-  /** Names only — enough to search and to eyeball before promoting. */
-  ingredients: string[];
+  ingredients: DiscoveredIngredient[];
   fetchedAt: string;
+}
+
+/**
+ * One line of a recipe, as Spoonacular reports it — amount, unit and the
+ * macros for that amount are already in their `nutrition.ingredients`
+ * payload, so this needs no ingredient database lookup of its own. What it
+ * does not carry is a Canadian price or a checked allergen list; matching it
+ * against `INGREDIENTS` (see `lib/ingredient-match.ts`) is what supplies
+ * those, and only for the names that match.
+ */
+export interface DiscoveredIngredient {
+  name: string;
+  amount: number;
+  unit: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
 }
 
 export interface DiscoveryIndex {
@@ -49,6 +66,9 @@ interface SpoonNutrient {
 interface SpoonIngredient {
   name?: string;
   originalName?: string;
+  amount?: number;
+  unit?: string;
+  nutrients?: SpoonNutrient[];
 }
 export interface SpoonResult {
   id?: number;
@@ -100,8 +120,20 @@ export function normalize(r: SpoonResult, now = new Date()): Discovered | null {
     diets: r.diets ?? [],
     dishTypes: r.dishTypes ?? [],
     ingredients: (r.nutrition?.ingredients ?? [])
-      .map((i) => (i.originalName || i.name || "").trim())
-      .filter(Boolean),
+      .map((i): DiscoveredIngredient | null => {
+        const name = (i.originalName || i.name || "").trim();
+        if (!name) return null;
+        return {
+          name,
+          amount: i.amount ?? 0,
+          unit: i.unit ?? "",
+          kcal: nutrient(i.nutrients, "Calories"),
+          protein: nutrient(i.nutrients, "Protein"),
+          carbs: nutrient(i.nutrients, "Carbohydrates"),
+          fat: nutrient(i.nutrients, "Fat"),
+        };
+      })
+      .filter((i): i is DiscoveredIngredient => i !== null),
     fetchedAt: now.toISOString(),
   };
 }
@@ -174,7 +206,7 @@ export function searchDiscovered(
       // Meat-avoidance the flags cannot express falls back to the ingredient
       // names — crude, but it beats showing pork to someone avoiding pork.
       const banned = DIET_EXCLUDES[prefs.diet];
-      const text = (r.title + " " + r.ingredients.join(" ")).toLowerCase();
+      const text = (r.title + " " + r.ingredients.map((i) => i.name).join(" ")).toLowerCase();
       if (banned.includes("pork") && /\b(pork|bacon|ham|prosciutto|chorizo)\b/.test(text))
         return false;
       if (banned.includes("red-meat") && /\b(beef|lamb|steak|mince|veal)\b/.test(text))

@@ -4,21 +4,46 @@ import { AlertTriangle, ExternalLink, Search, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import raw from "@/lib/discovered.json";
 import { searchDiscovered } from "@/lib/discovery";
-import type { Discovered, DiscoveryIndex } from "@/lib/discovery";
+import type { Discovered, DiscoveredIngredient, DiscoveryIndex } from "@/lib/discovery";
+import { matchIngredient } from "@/lib/ingredient-match";
 import { ALLERGEN_LABEL } from "@/lib/types";
 import type { Prefs } from "@/lib/types";
 import { Card, SectionHeading } from "./ui";
 
 const index = raw as unknown as DiscoveryIndex;
 
-function Row({ recipe, unverified }: { recipe: Discovered; unverified: string[] }) {
+function IngredientLine({ item }: { item: DiscoveredIngredient }) {
+  const match = matchIngredient(item.name);
   return (
-    <li>
+    <li className="flex items-center justify-between gap-2 text-[11px]">
+      <span className="min-w-0 truncate text-ink">
+        {item.amount ? `${Math.round(item.amount * 10) / 10} ${item.unit} ` : ""}
+        {item.name}
+      </span>
+      <span
+        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${
+          match ? "bg-olive/10 text-olive" : "bg-sand text-muted"
+        }`}
+      >
+        {match ? match.ingredient.name : "estimate only"}
+      </span>
+    </li>
+  );
+}
+
+function Row({ recipe, unverified }: { recipe: Discovered; unverified: string[] }) {
+  const matched = useMemo(
+    () => recipe.ingredients.filter((i) => matchIngredient(i.name)).length,
+    [recipe.ingredients],
+  );
+
+  return (
+    <li className="px-4 py-3">
       <a
         href={recipe.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors duration-200 hover:bg-sand/50"
+        className="flex cursor-pointer items-start gap-3"
       >
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
@@ -30,11 +55,6 @@ function Row({ recipe, unverified }: { recipe: Discovered; unverified: string[] 
             {recipe.fat} g fat
             {recipe.readyInMinutes ? ` · ${recipe.readyInMinutes} min` : ""}
           </span>
-          {recipe.ingredients.length ? (
-            <span className="mt-1 block truncate text-[11px] text-muted/80">
-              {recipe.ingredients.slice(0, 6).join(", ")}
-            </span>
-          ) : null}
           {unverified.length ? (
             <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-gold/10 px-2 py-0.5 text-[10px] text-gold">
               <AlertTriangle className="h-2.5 w-2.5 shrink-0" aria-hidden />
@@ -43,6 +63,18 @@ function Row({ recipe, unverified }: { recipe: Discovered; unverified: string[] 
           ) : null}
         </span>
       </a>
+      {recipe.ingredients.length ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer select-none text-[11px] font-medium text-terracotta">
+            {matched} of {recipe.ingredients.length} ingredients priced in your database
+          </summary>
+          <ul className="mt-1.5 space-y-1 border-l border-line pl-2.5">
+            {recipe.ingredients.map((item, i) => (
+              <IngredientLine key={`${item.name}-${i}`} item={item} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </li>
   );
 }

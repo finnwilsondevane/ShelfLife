@@ -143,6 +143,36 @@ export function basketAt(
 export const formatDistance = (m: number) =>
   m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
 
+export interface ParsedPriceLine {
+  raw: string;
+  name: string;
+  price: number;
+}
+
+/**
+ * Turns pasted flyer or receipt text into name/price pairs — one line at a
+ * time, entirely offline. Flyers and receipts both put the price at the end
+ * of the line ("Chicken breast 1kg ... $12.99"), so that is the one pattern
+ * this looks for; anything it cannot parse is silently skipped rather than
+ * guessed at, and the caller still shows every parsed line before writing
+ * anything to the price book.
+ */
+export function parsePriceLines(text: string): ParsedPriceLine[] {
+  const out: ParsedPriceLine[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const m = line.match(/\$?\s*(\d+(?:\.\d{1,2})?)\s*(?:\/\s*(?:lb|kg|ea|each))?\s*$/i);
+    if (!m || m.index === undefined) continue;
+    const price = Number(m[1]);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const name = line.slice(0, m.index).trim().replace(/[-–—:]+$/, "").trim();
+    if (!name) continue;
+    out.push({ raw: line, name, price });
+  }
+  return out;
+}
+
 /**
  * Flipp carries most Canadian grocery flyers. Deep-linking a search for the
  * store name is the honest way to do this: the user reads the flyer at the

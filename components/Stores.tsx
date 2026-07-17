@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ClipboardPaste,
   ExternalLink,
   Loader2,
   MapPin,
@@ -10,9 +11,17 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { matchIngredient } from "@/lib/ingredient-match";
 import { INGREDIENTS } from "@/lib/ingredients";
 import { money } from "@/lib/planner";
-import { basketAt, findStores, flyerUrl, formatDistance, geocode } from "@/lib/stores";
+import {
+  basketAt,
+  findStores,
+  flyerUrl,
+  formatDistance,
+  geocode,
+  parsePriceLines,
+} from "@/lib/stores";
 import type { PriceBook, Store } from "@/lib/stores";
 import { AISLE_LABEL, AISLE_ORDER } from "@/lib/types";
 import type { Aisle, Ingredient, ShoppingLine } from "@/lib/types";
@@ -29,6 +38,8 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
   const [book, setBook] = useState<PriceBook>({});
   const [editing, setEditing] = useState<string | null>(null);
   const [priceQuery, setPriceQuery] = useState("");
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
 
   useEffect(() => {
     try {
@@ -105,6 +116,36 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
       persist(saved, next);
       return next;
     });
+  };
+
+  const openEditor = (id: string) => {
+    setEditing(editing === id ? null : id);
+    setPasteOpen(false);
+    setPasteText("");
+  };
+
+  const parsedPrices = useMemo(
+    () =>
+      parsePriceLines(pasteText).map((line) => ({
+        ...line,
+        match: matchIngredient(line.name),
+      })),
+    [pasteText],
+  );
+  const matchedPrices = parsedPrices.filter((l) => l.match);
+
+  const applyParsedPrices = () => {
+    if (!editing) return;
+    setBook((prev) => {
+      const next = { ...prev, [editing]: { ...(prev[editing] ?? {}) } };
+      for (const line of matchedPrices) {
+        if (line.match) next[editing][line.match.id] = line.price;
+      }
+      persist(saved, next);
+      return next;
+    });
+    setPasteText("");
+    setPasteOpen(false);
   };
 
   const baskets = useMemo(
@@ -286,7 +327,7 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
                     ) : null}
                   </span>
                   <button
-                    onClick={() => setEditing(editing === b.store.id ? null : b.store.id)}
+                    onClick={() => openEditor(b.store.id)}
                     className="shrink-0 cursor-pointer rounded-lg border border-line px-2.5 py-1 text-[11px] font-medium text-muted transition-colors duration-200 hover:border-terracotta/40 hover:text-terracotta"
                   >
                     {editing === b.store.id ? "Done" : "Prices"}
@@ -314,6 +355,61 @@ export function Stores({ lines }: { lines: ShoppingLine[] }) {
                   <strong>this week</strong>
                   {" items sort to the top of each aisle, but pricing anything else now means it's already known the next time it comes up in rotation."}
                 </p>
+              </div>
+              <div className="border-b border-line px-4 py-2.5">
+                <button
+                  onClick={() => setPasteOpen((o) => !o)}
+                  className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-terracotta hover:underline"
+                >
+                  <ClipboardPaste className="h-3 w-3 shrink-0" aria-hidden />
+                  {pasteOpen ? "Hide paste-in" : "Paste prices from a flyer or receipt"}
+                </button>
+                {pasteOpen ? (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      value={pasteText}
+                      onChange={(e) => setPasteText(e.target.value)}
+                      placeholder={"Chicken breast 1kg $12.99\nBroccoli $2.49\nSalmon fillets 600g $15.99"}
+                      rows={4}
+                      aria-label="Paste flyer or receipt text"
+                      className="w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-[12px] leading-relaxed text-ink outline-none focus:border-terracotta"
+                    />
+                    {parsedPrices.length ? (
+                      <>
+                        <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line bg-sand/30 px-2.5 py-2">
+                          {parsedPrices.map((l, i) => (
+                            <li
+                              key={`${l.raw}-${i}`}
+                              className="flex items-center justify-between gap-2 text-[11px]"
+                            >
+                              <span className="min-w-0 truncate text-ink">{l.name}</span>
+                              <span className="flex shrink-0 items-center gap-1.5">
+                                <span className="tabular-nums text-muted">{money(l.price)}</span>
+                                {l.match ? (
+                                  <span className="rounded-full bg-olive/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-olive">
+                                    {l.match.ingredient.name}
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full bg-ember/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-ember">
+                                    no match
+                                  </span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <button
+                          onClick={applyParsedPrices}
+                          disabled={matchedPrices.length === 0}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-terracotta px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-200 hover:bg-ember disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Apply {matchedPrices.length} price
+                          {matchedPrices.length === 1 ? "" : "s"}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <div className="border-b border-line px-4 py-2.5">
                 <div className="flex items-center gap-2">
