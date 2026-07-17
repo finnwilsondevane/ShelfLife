@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   RotateCcw,
+  MapPin,
   ShoppingBasket,
   Sparkles,
   Wallet,
@@ -19,6 +20,7 @@ import { Filters } from "@/components/Filters";
 import { MealGrid } from "@/components/MealGrid";
 import { PrepTimeline } from "@/components/PrepTimeline";
 import { ShoppingList } from "@/components/ShoppingList";
+import { Stores } from "@/components/Stores";
 import { Card } from "@/components/ui";
 import {
   buildShoppingList,
@@ -38,6 +40,7 @@ const TABS = [
   { id: "shop", label: "Shopping list", icon: ShoppingBasket },
   { id: "prep", label: "Sunday prep", icon: ChefHat },
   { id: "cost", label: "Cost", icon: Wallet },
+  { id: "stores", label: "Stores", icon: MapPin },
   { id: "discover", label: "Discover", icon: Sparkles },
 ] as const;
 
@@ -310,7 +313,11 @@ export default function Home() {
       <div key={`${tab}-${weekIndex}`} className="rise">
         {/* Discovery does not depend on a buildable week — and is most useful
             when the filters have left you without one. */}
-        {tab === "discover" ? <Discover prefs={prefs} /> : !plan.viable ? (
+        {tab === "discover" ? (
+          <Discover prefs={prefs} />
+        ) : tab === "stores" ? (
+          <Stores lines={lines} />
+        ) : !plan.viable ? (
           <Card className="px-6 py-12 text-center">
             <h2 className="font-display text-2xl text-ink">No week to build</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted">
